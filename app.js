@@ -427,18 +427,16 @@
 
     void main() {
       float m = featureMask(v_uv);
-      if (m <= 0.001) discard;
+      if (m <= 0.001) { gl_FragColor = vec4(1.0); return; }  // multiply identity
 
-      float aA = u_acne > 0.001 ? acneField(v_uv) * u_acne * m * 0.85 : 0.0;
-      float aW = u_wrinkle > 0.001 ? wrinkleField(v_uv) * u_wrinkle * m * 0.7 : 0.0;
-      vec3 cA = vec3(0.60, 0.19, 0.16);  // inflamed red
-      vec3 cW = vec3(0.20, 0.13, 0.10);  // crease shadow
+      float spot = u_acne > 0.001 ? acneField(v_uv) * u_acne * m : 0.0;
+      float wr = u_wrinkle > 0.001 ? wrinkleField(v_uv) * u_wrinkle * m : 0.0;
 
-      // composite acne over wrinkle, output premultiplied alpha
-      float outa = aA + aW * (1.0 - aA);
-      if (outa <= 0.003) discard;
-      vec3 prem = cA * aA + cW * aW * (1.0 - aA);
-      gl_FragColor = vec4(prem, outa);
+      // MULTIPLY tints (1.0 = no change) so the effect rides the skin's own
+      // light & shadow instead of sitting on top as flat colour.
+      vec3 acneTint = mix(vec3(1.0), vec3(0.78, 0.40, 0.36), clamp(spot * 0.95, 0.0, 1.0));
+      vec3 wrTint   = mix(vec3(1.0), vec3(0.72, 0.64, 0.60), clamp(wr * 0.85, 0.0, 1.0));
+      gl_FragColor = vec4(acneTint * wrTint, 1.0);
     }
   `;
 
@@ -487,7 +485,7 @@
 
     gl.useProgram(meshProgram);
     gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); // premultiplied alpha
+    gl.blendFunc(gl.ZERO, gl.SRC_COLOR); // multiply: result = skin * tint
 
     gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
     gl.bufferData(gl.ARRAY_BUFFER, meshPosArr, gl.DYNAMIC_DRAW);
