@@ -36,6 +36,7 @@
         <button class="preset active" data-preset="natural">เนียนธรรมชาติ</button>
         <button class="preset" data-preset="smooth">ผิวเนียนมาก</button>
         <button class="preset" data-preset="glam">สวยจัดเต็ม</button>
+        <button class="preset sim" data-preset="problem">ผิวมีปัญหา</button>
       </div>
 
       <div class="sliders">
@@ -56,6 +57,12 @@
         </label>
         <label>โทนสีปาก <span class="val" id="v-lips">0</span>
           <input type="range" id="lips" min="0" max="100" value="0" />
+        </label>
+        <label class="sim">จำลองสิว 🔴 <span class="val" id="v-acne">0</span>
+          <input type="range" id="acne" min="0" max="100" value="0" />
+        </label>
+        <label class="sim">จำลองริ้วรอย 〰️ <span class="val" id="v-wrinkle">0</span>
+          <input type="range" id="wrinkle" min="0" max="100" value="0" />
         </label>
       </div>
 

@@ -156,6 +156,17 @@ input[type="range"]::-moz-range-thumb {
   background: var(--accent); cursor: pointer;
 }
 
+/* skin-problem simulation controls — distinct (orange) accent */
+.sliders label.sim { color: #ffb37a; }
+.preset.sim {
+  border-color: rgba(255, 140, 60, 0.5);
+  color: #ffb37a;
+}
+.preset.sim.active {
+  background: linear-gradient(90deg, #ff7a45, #ff4d4d);
+  color: #fff;
+}
+
 .actions { display: flex; gap: 10px; }
 .actions button { flex: 1; }
 

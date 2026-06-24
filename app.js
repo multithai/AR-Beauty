@@ -31,6 +31,8 @@
     slim: document.getElementById("slim"),
     eye: document.getElementById("eye"),
     lips: document.getElementById("lips"),
+    acne: document.getElementById("acne"),
+    wrinkle: document.getElementById("wrinkle"),
   };
   const valLabels = {
     smooth: document.getElementById("v-smooth"),
@@ -39,15 +41,18 @@
     slim: document.getElementById("v-slim"),
     eye: document.getElementById("v-eye"),
     lips: document.getElementById("v-lips"),
+    acne: document.getElementById("v-acne"),
+    wrinkle: document.getElementById("v-wrinkle"),
   };
 
-  const params = { smooth: 45, whiten: 25, bright: 15, slim: 20, eye: 15, lips: 0 };
+  const params = { smooth: 45, whiten: 25, bright: 15, slim: 20, eye: 15, lips: 0, acne: 0, wrinkle: 0 };
 
   const PRESETS = {
-    off:     { smooth: 0,  whiten: 0,  bright: 0,  slim: 0,  eye: 0,  lips: 0 },
-    natural: { smooth: 45, whiten: 18, bright: 12, slim: 18, eye: 12, lips: 0 },
-    smooth:  { smooth: 70, whiten: 30, bright: 18, slim: 25, eye: 18, lips: 10 },
-    glam:    { smooth: 85, whiten: 40, bright: 25, slim: 40, eye: 35, lips: 45 },
+    off:     { smooth: 0,  whiten: 0,  bright: 0,  slim: 0,  eye: 0,  lips: 0,  acne: 0,  wrinkle: 0 },
+    natural: { smooth: 45, whiten: 18, bright: 12, slim: 18, eye: 12, lips: 0,  acne: 0,  wrinkle: 0 },
+    smooth:  { smooth: 70, whiten: 30, bright: 18, slim: 25, eye: 18, lips: 10, acne: 0,  wrinkle: 0 },
+    glam:    { smooth: 85, whiten: 40, bright: 25, slim: 40, eye: 35, lips: 45, acne: 0,  wrinkle: 0 },
+    problem: { smooth: 0,  whiten: 0,  bright: 0,  slim: 0,  eye: 0,  lips: 0,  acne: 60, wrinkle: 55 },
   };
 
   let compare = false;   // show original (before) while held
@@ -102,6 +107,17 @@
 
     uniform vec2 u_mouth;   // uv center of mouth
     uniform float u_mouthRad;
+
+    // --- skin problem simulation ---
+    uniform float u_acne;     // 0..1 simulate pimples
+    uniform float u_wrinkle;  // 0..1 simulate wrinkles
+    // face-local coordinate frame (pixel space) used to anchor the
+    // simulated features so they stick to the face as it moves.
+    uniform vec2  u_faceO;     // origin (uv)
+    uniform vec2  u_faceEx;    // unit x axis (across face, pixel space)
+    uniform vec2  u_faceEy;    // unit y axis (forehead->chin, pixel space)
+    uniform float u_faceHalfW; // px
+    uniform float u_faceHalfH; // px
 
     // --- geometric warp: returns source uv to sample ---
     vec2 warp(vec2 uv) {
@@ -160,6 +176,72 @@
 
     float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 
+    // hash helpers for procedural placement
+    float hash21(vec2 p) {
+      p = fract(p * vec2(123.34, 456.21));
+      p += dot(p, p + 45.32);
+      return fract(p.x * p.y);
+    }
+
+    // map a screen uv into face-local coordinates (~[-1,1] across the face)
+    vec2 faceLocal(vec2 uv) {
+      vec2 relPx = (uv - u_faceO) * u_texSize;
+      float lx = dot(relPx, u_faceEx) / max(u_faceHalfW, 1.0);
+      float ly = dot(relPx, u_faceEy) / max(u_faceHalfH, 1.0);
+      return vec2(lx, ly);
+    }
+
+    // skin-only weight: inside face, excluding eyes & mouth
+    float skinFactor(vec2 uv) {
+      float m = faceMask(uv);
+      float de = min(distance(uv, u_eyeL), distance(uv, u_eyeR));
+      m *= smoothstep(u_eyeRad * 0.45, u_eyeRad * 0.85, de);
+      float dm = distance(uv, u_mouth);
+      m *= smoothstep(u_mouthRad * 0.6, u_mouthRad * 1.0, dm);
+      return m;
+    }
+
+    // simulated pimples: reddish soft spots scattered over the skin
+    float acneField(vec2 lp) {
+      float density = mix(5.0, 12.0, u_acne);
+      vec2 g = lp * density;
+      vec2 cell = floor(g);
+      float spot = 0.0;
+      for (int dx = -1; dx <= 1; dx++) {
+        for (int dy = -1; dy <= 1; dy++) {
+          vec2 c = cell + vec2(float(dx), float(dy));
+          float h = hash21(c);
+          if (h < (0.18 + 0.55 * u_acne)) {
+            vec2 center = c + vec2(hash21(c + 1.7), hash21(c + 4.3));
+            float d = length(g - center);
+            float r = mix(0.12, 0.30, hash21(c + 7.1));
+            spot = max(spot, smoothstep(r, 0.0, d) * (0.6 + 0.4 * hash21(c + 9.9)));
+          }
+        }
+      }
+      return spot;
+    }
+
+    // thin bright ridge generator for wrinkle lines
+    float ridge(float t) { return pow(max(sin(t), 0.0), 16.0); }
+
+    // simulated wrinkles: forehead creases, nasolabial folds, fine lines
+    float wrinkleField(vec2 lp) {
+      float w = 0.0;
+      // forehead horizontal creases (upper-center)
+      float fz = step(-0.85, lp.y) * step(lp.y, -0.32) * smoothstep(0.62, 0.22, abs(lp.x));
+      w += fz * ridge(lp.y * 22.0 + sin(lp.x * 7.0) * 0.7) * 0.9;
+      // nasolabial folds (left & right, mid face)
+      float nzL = step(0.02, lp.y) * step(lp.y, 0.58) * smoothstep(0.14, 0.34, -lp.x) * smoothstep(0.64, 0.40, -lp.x);
+      w += nzL * ridge((lp.x + lp.y) * 15.0) * 0.7;
+      float nzR = step(0.02, lp.y) * step(lp.y, 0.58) * smoothstep(0.14, 0.34, lp.x) * smoothstep(0.64, 0.40, lp.x);
+      w += nzR * ridge((lp.x - lp.y) * 15.0) * 0.7;
+      // overall fine aging texture
+      float fine = ridge((lp.x * 9.0 + lp.y * 31.0) + hash21(floor(lp * 38.0)) * 6.28) * 0.22;
+      w += fine;
+      return clamp(w, 0.0, 1.0);
+    }
+
     void main() {
       vec2 uv = warp(v_uv);
       vec3 orig = texture2D(u_tex, uv).rgb;
@@ -203,6 +285,23 @@
       if (u_whiten > 0.001) {
         vec3 target = mix(color, vec3(1.0, 0.98, 0.97), 0.5);
         color = mix(color, target, u_whiten * 0.4 * mask);
+      }
+
+      // ---- Simulate pimples ----
+      if (u_acne > 0.001 && u_hasFace > 0.5) {
+        float skin = skinFactor(v_uv);
+        vec2 lp = faceLocal(v_uv);
+        float spot = acneField(lp);
+        vec3 acneColor = vec3(0.62, 0.16, 0.13);
+        color = mix(color, mix(color, acneColor, 0.55), spot * u_acne * skin);
+      }
+
+      // ---- Simulate wrinkles ----
+      if (u_wrinkle > 0.001 && u_hasFace > 0.5) {
+        float skin = skinFactor(v_uv);
+        vec2 lp = faceLocal(v_uv);
+        float wr = wrinkleField(lp);
+        color *= (1.0 - wr * 0.32 * u_wrinkle * skin);
       }
 
       // ---- Lip tint ----
@@ -264,6 +363,7 @@
     "u_texSize", "u_smooth", "u_whiten", "u_bright", "u_slim", "u_eye", "u_lips",
     "u_hasFace", "u_faceCenter", "u_faceRadius", "u_eyeL", "u_eyeR", "u_eyeRad",
     "u_cheekL", "u_cheekR", "u_slimRad", "u_mouth", "u_mouthRad",
+    "u_acne", "u_wrinkle", "u_faceO", "u_faceEx", "u_faceEy", "u_faceHalfW", "u_faceHalfH",
   ].forEach((n) => { U[n] = gl.getUniformLocation(program, n); });
   gl.uniform1i(gl.getUniformLocation(program, "u_tex"), 0);
 
@@ -304,7 +404,24 @@
     const mouthW = Math.hypot(lm[291].x - lm[61].x, lm[291].y - lm[61].y);
     const mouthRad = Math.max(mouthW * 0.75, 0.03);
 
+    // face-local frame (in pixel space) to anchor simulated acne/wrinkles
+    const W = canvas.width || 1, H = canvas.height || 1;
+    const forehead = lm[10], chin = lm[152];
+    let exX = (cheekR.x - cheekL.x) * W, exY = (cheekR.y - cheekL.y) * H;
+    let exLen = Math.hypot(exX, exY) || 1;
+    exX /= exLen; exY /= exLen;
+    let eyX = (chin.x - forehead.x) * W, eyY = (chin.y - forehead.y) * H;
+    let eyLen = Math.hypot(eyX, eyY) || 1;
+    eyX /= eyLen; eyY /= eyLen;
+    const halfW = (exLen / 2) || 1;
+    const halfH = (eyLen / 2) || 1;
+
     gl.uniform1f(U.u_hasFace, 1.0);
+    gl.uniform2f(U.u_faceO, cx, cy);
+    gl.uniform2f(U.u_faceEx, exX, exY);
+    gl.uniform2f(U.u_faceEy, eyX, eyY);
+    gl.uniform1f(U.u_faceHalfW, halfW);
+    gl.uniform1f(U.u_faceHalfH, halfH);
     gl.uniform2f(U.u_faceCenter, cx, cy);
     gl.uniform2f(U.u_faceRadius, rx, ry);
     gl.uniform2f(U.u_eyeL, eyeL.x, eyeL.y);
@@ -346,6 +463,8 @@
     gl.uniform1f(U.u_slim, (params.slim / 100) * k);
     gl.uniform1f(U.u_eye, (params.eye / 100) * k);
     gl.uniform1f(U.u_lips, (params.lips / 100) * k);
+    gl.uniform1f(U.u_acne, (params.acne / 100) * k);
+    gl.uniform1f(U.u_wrinkle, (params.wrinkle / 100) * k);
 
     computeFaceUniforms(compare ? null : latestLandmarks);
 
