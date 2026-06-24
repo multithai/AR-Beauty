@@ -473,11 +473,17 @@
     const n = meshPosArr.length / 2;
     if (lm.length < n) return;
 
-    // EMA-smooth landmark positions, then convert to clip space
+    // Adaptive smoothing (One-Euro style): filter hard when the face is
+    // still (kills jitter) but follow almost instantly when it moves
+    // (no lag -> the overlay no longer slips off during movement).
     if (!smLm) { smLm = new Float32Array(n * 2); for (let i = 0; i < n; i++) { smLm[i*2]=lm[i].x; smLm[i*2+1]=lm[i].y; } }
     for (let i = 0; i < n; i++) {
-      const sx = smLm[i*2]   + (lm[i].x - smLm[i*2])   * ALPHA;
-      const sy = smLm[i*2+1] + (lm[i].y - smLm[i*2+1]) * ALPHA;
+      const px = smLm[i*2], py = smLm[i*2+1];
+      const dx = lm[i].x - px, dy = lm[i].y - py;
+      const speed = Math.hypot(dx, dy);
+      const a = Math.min(1, 0.30 + speed * 60); // still -> 0.30, moving -> ~1
+      const sx = px + dx * a;
+      const sy = py + dy * a;
       smLm[i*2] = sx; smLm[i*2+1] = sy;
       meshPosArr[i*2]   = sx * 2.0 - 1.0;
       meshPosArr[i*2+1] = 1.0 - sy * 2.0;
