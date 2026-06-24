@@ -292,8 +292,14 @@
         float skin = skinFactor(v_uv);
         vec2 lp = faceLocal(v_uv);
         float spot = acneField(lp);
-        vec3 acneColor = vec3(0.62, 0.16, 0.13);
-        color = mix(color, mix(color, acneColor, 0.55), spot * u_acne * skin);
+        float amt = spot * u_acne * skin;
+        // inflamed reddish tint applied MULTIPLICATIVELY so it inherits the
+        // skin's own light & shadow -> looks on the skin, not a flat sticker.
+        vec3 tint = mix(vec3(1.0), vec3(0.80, 0.42, 0.38), amt);
+        color *= tint;
+        // tiny highlight near the centre to fake a slightly raised bump
+        float hi = smoothstep(0.78, 1.0, spot) * u_acne * skin;
+        color += hi * 0.10;
       }
 
       // ---- Simulate wrinkles ----
@@ -301,7 +307,10 @@
         float skin = skinFactor(v_uv);
         vec2 lp = faceLocal(v_uv);
         float wr = wrinkleField(lp);
-        color *= (1.0 - wr * 0.32 * u_wrinkle * skin);
+        float wa = u_wrinkle * skin;
+        // darken the crease, then a faint highlight on the ridge for depth
+        color *= (1.0 - wr * 0.30 * wa);
+        color += smoothstep(0.30, 0.75, wr) * 0.035 * wa;
       }
 
       // ---- Lip tint ----
@@ -372,9 +381,16 @@
   // ---------------------------------------------------------------
   // left eye corners: 33 (outer), 133 (inner); right eye: 362, 263
   // left cheek: 234 ; right cheek: 454 ; chin: 152 ; mouth: 13/14
+  // EMA-smoothed face values to kill landmark jitter (the main cause of
+  // the "floaty sticker" look). Higher alpha = more responsive, less smooth.
+  let sm = null;
+  const ALPHA = 0.45;
+  function ema(prev, next) { return prev == null ? next : prev + (next - prev) * ALPHA; }
+
   function computeFaceUniforms(lm) {
     if (!lm) {
       gl.uniform1f(U.u_hasFace, 0.0);
+      sm = null;
       return;
     }
     // bounding box over all landmarks
@@ -416,22 +432,32 @@
     const halfW = (exLen / 2) || 1;
     const halfH = (eyLen / 2) || 1;
 
+    const raw = {
+      cx, cy, rx, ry,
+      eLx: eyeL.x, eLy: eyeL.y, eRx: eyeR.x, eRy: eyeR.y, eyeRad,
+      cLx: cheekL.x, cLy: cheekL.y, cRx: cheekR.x, cRy: cheekR.y, slimRad,
+      mx: mouth.x, my: mouth.y, mouthRad,
+      exX, exY, eyX, eyY, halfW, halfH,
+    };
+    if (!sm) sm = Object.assign({}, raw);
+    else for (const key in raw) sm[key] = ema(sm[key], raw[key]);
+
     gl.uniform1f(U.u_hasFace, 1.0);
-    gl.uniform2f(U.u_faceO, cx, cy);
-    gl.uniform2f(U.u_faceEx, exX, exY);
-    gl.uniform2f(U.u_faceEy, eyX, eyY);
-    gl.uniform1f(U.u_faceHalfW, halfW);
-    gl.uniform1f(U.u_faceHalfH, halfH);
-    gl.uniform2f(U.u_faceCenter, cx, cy);
-    gl.uniform2f(U.u_faceRadius, rx, ry);
-    gl.uniform2f(U.u_eyeL, eyeL.x, eyeL.y);
-    gl.uniform2f(U.u_eyeR, eyeR.x, eyeR.y);
-    gl.uniform1f(U.u_eyeRad, eyeRad);
-    gl.uniform2f(U.u_cheekL, cheekL.x, cheekL.y);
-    gl.uniform2f(U.u_cheekR, cheekR.x, cheekR.y);
-    gl.uniform1f(U.u_slimRad, slimRad);
-    gl.uniform2f(U.u_mouth, mouth.x, mouth.y);
-    gl.uniform1f(U.u_mouthRad, mouthRad);
+    gl.uniform2f(U.u_faceO, sm.cx, sm.cy);
+    gl.uniform2f(U.u_faceEx, sm.exX, sm.exY);
+    gl.uniform2f(U.u_faceEy, sm.eyX, sm.eyY);
+    gl.uniform1f(U.u_faceHalfW, sm.halfW);
+    gl.uniform1f(U.u_faceHalfH, sm.halfH);
+    gl.uniform2f(U.u_faceCenter, sm.cx, sm.cy);
+    gl.uniform2f(U.u_faceRadius, sm.rx, sm.ry);
+    gl.uniform2f(U.u_eyeL, sm.eLx, sm.eLy);
+    gl.uniform2f(U.u_eyeR, sm.eRx, sm.eRy);
+    gl.uniform1f(U.u_eyeRad, sm.eyeRad);
+    gl.uniform2f(U.u_cheekL, sm.cLx, sm.cLy);
+    gl.uniform2f(U.u_cheekR, sm.cRx, sm.cRy);
+    gl.uniform1f(U.u_slimRad, sm.slimRad);
+    gl.uniform2f(U.u_mouth, sm.mx, sm.my);
+    gl.uniform1f(U.u_mouthRad, sm.mouthRad);
   }
 
   // ---------------------------------------------------------------
