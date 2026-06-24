@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>AR Beauty Filter — หน้าเนียนไร้สิว ปรับแต่งหน้าได้</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <h1>✨ AR Beauty Filter</h1>
+      <div class="badges">
+        <span id="fps" class="badge">-- FPS</span>
+        <span id="status" class="badge">กำลังโหลด…</span>
+      </div>
+    </header>
+
+    <main class="stage">
+      <div class="canvas-wrap">
+        <video id="video" playsinline muted></video>
+        <canvas id="output"></canvas>
+        <div id="overlay" class="overlay">
+          <div class="overlay-card">
+            <p>กดปุ่ม <b>เปิดกล้อง</b> เพื่อเริ่มใช้งาน</p>
+            <button id="startBtn" class="primary">📷 เปิดกล้อง</button>
+            <small>ระบบจะขออนุญาตใช้กล้อง — ภาพประมวลผลในเครื่องคุณเท่านั้น ไม่ส่งออกไปไหน</small>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <section class="controls">
+      <div class="presets">
+        <button class="preset" data-preset="off">ปิด</button>
+        <button class="preset active" data-preset="natural">เนียนธรรมชาติ</button>
+        <button class="preset" data-preset="smooth">ผิวเนียนมาก</button>
+        <button class="preset" data-preset="glam">สวยจัดเต็ม</button>
+      </div>
+
+      <div class="sliders">
+        <label>หน้าเนียน / ลบสิว <span class="val" id="v-smooth">60</span>
+          <input type="range" id="smooth" min="0" max="100" value="60" />
+        </label>
+        <label>ผิวกระจ่างใส <span class="val" id="v-whiten">25</span>
+          <input type="range" id="whiten" min="0" max="100" value="25" />
+        </label>
+        <label>ความสว่าง <span class="val" id="v-bright">15</span>
+          <input type="range" id="bright" min="0" max="100" value="15" />
+        </label>
+        <label>หน้าเรียว <span class="val" id="v-slim">20</span>
+          <input type="range" id="slim" min="0" max="100" value="20" />
+        </label>
+        <label>ตาโต <span class="val" id="v-eye">15</span>
+          <input type="range" id="eye" min="0" max="100" value="15" />
+        </label>
+        <label>โทนสีปาก <span class="val" id="v-lips">0</span>
+          <input type="range" id="lips" min="0" max="100" value="0" />
+        </label>
+      </div>
+
+      <div class="actions">
+        <button id="compareBtn" class="ghost">👁️ เทียบก่อน/หลัง</button>
+        <button id="snapBtn" class="primary">📸 ถ่ายรูป</button>
+        <button id="switchBtn" class="ghost">🔄 สลับกล้อง</button>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <small>สร้างด้วย MediaPipe FaceMesh + WebGL · ประมวลผลแบบเรียลไทม์ในเบราว์เซอร์</small>
+    </footer>
+  </div>
+
+  <!-- MediaPipe FaceMesh (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+  <script src="app.js"></script>
+</body>
+</html>

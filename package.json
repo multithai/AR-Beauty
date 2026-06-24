@@ -1,0 +1,11 @@
+{
+  "name": "ar-beauty-filter",
+  "version": "0.1.0",
+  "description": "AR Beauty Filter — real-time skin smoothing / blemish removal + face retouch in the browser",
+  "scripts": {
+    "start": "npx --yes serve -l 8080 .",
+    "dev": "npx --yes serve -l 8080 ."
+  },
+  "keywords": ["ar", "beauty", "filter", "face-mesh", "webgl", "mediapipe"],
+  "license": "MIT"
+}
