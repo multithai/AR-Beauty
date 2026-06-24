@@ -41,18 +41,17 @@
     lips: document.getElementById("v-lips"),
   };
 
-  const params = { smooth: 60, whiten: 25, bright: 15, slim: 20, eye: 15, lips: 0 };
+  const params = { smooth: 45, whiten: 25, bright: 15, slim: 20, eye: 15, lips: 0 };
 
   const PRESETS = {
     off:     { smooth: 0,  whiten: 0,  bright: 0,  slim: 0,  eye: 0,  lips: 0 },
-    natural: { smooth: 55, whiten: 20, bright: 12, slim: 18, eye: 12, lips: 0 },
-    smooth:  { smooth: 85, whiten: 35, bright: 20, slim: 25, eye: 18, lips: 10 },
-    glam:    { smooth: 90, whiten: 45, bright: 25, slim: 40, eye: 35, lips: 45 },
+    natural: { smooth: 45, whiten: 18, bright: 12, slim: 18, eye: 12, lips: 0 },
+    smooth:  { smooth: 70, whiten: 30, bright: 18, slim: 25, eye: 18, lips: 10 },
+    glam:    { smooth: 85, whiten: 40, bright: 25, slim: 40, eye: 35, lips: 45 },
   };
 
   let compare = false;   // show original (before) while held
   let facingMode = "user";
-  let camera = null;
   let faceMesh = null;
   let latestLandmarks = null;
 
@@ -171,7 +170,7 @@
       // ---- Skin smoothing (edge-preserving bilateral) ----
       if (u_smooth > 0.001 && mask > 0.001) {
         vec2 texel = 1.0 / u_texSize;
-        float radius = mix(1.5, 6.0, u_smooth);
+        float radius = mix(1.0, 4.0, u_smooth);
         // sigma for color similarity -> preserves edges (eyes, lips, brows)
         float sigmaC = 0.09 + 0.06 * u_smooth;
         float invC = 1.0 / (2.0 * sigmaC * sigmaC);
@@ -388,31 +387,51 @@
     });
   }
 
+  let rafId = null;
+  let currentStream = null;
+  let sending = false;
+
   async function startCamera() {
     statusEl.textContent = "กำลังเปิดกล้อง…";
     try {
       if (!faceMesh) initFaceMesh();
-      if (camera) { camera.stop(); }
 
-      // request stream with chosen facingMode
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode, width: { ideal: 640 }, height: { ideal: 853 } },
+      // stop any previous stream / loop
+      if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      if (currentStream) { currentStream.getTracks().forEach((t) => t.stop()); }
+
+      // Request the highest resolution the device can give us so the
+      // preview stays sharp instead of being upscaled from a tiny frame.
+      currentStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode,
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
         audio: false,
       });
-      video.srcObject = stream;
+      video.srcObject = currentStream;
       await video.play();
-
-      camera = new Camera(video, {
-        onFrame: async () => { await faceMesh.send({ image: video }); },
-        width: 640,
-        height: 853,
-      });
-      camera.start();
 
       overlay.classList.add("hidden");
       // back camera should not be mirrored
       canvas.classList.toggle("no-mirror", facingMode === "environment");
-      statusEl.textContent = "พร้อมใช้งาน";
+
+      const track = currentStream.getVideoTracks()[0];
+      const s = track.getSettings ? track.getSettings() : {};
+      statusEl.textContent = "พร้อมใช้งาน" + (s.width ? ` (${s.width}×${s.height})` : "");
+
+      // Own frame loop — full control over resolution & pacing.
+      const loop = async () => {
+        if (video.readyState >= 2 && !sending) {
+          sending = true;
+          try { await faceMesh.send({ image: video }); }
+          catch (e) { /* ignore transient send errors */ }
+          sending = false;
+        }
+        rafId = requestAnimationFrame(loop);
+      };
+      loop();
     } catch (err) {
       console.error(err);
       statusEl.textContent = "เปิดกล้องไม่สำเร็จ: " + err.message;
@@ -487,7 +506,7 @@
 
   startBtn.addEventListener("click", startCamera);
 
-  if (typeof FaceMesh === "undefined" || typeof Camera === "undefined") {
+  if (typeof FaceMesh === "undefined") {
     statusEl.textContent = "โหลดไลบรารีไม่สำเร็จ (ตรวจสอบอินเทอร์เน็ต)";
   } else {
     statusEl.textContent = "พร้อมเปิดกล้อง";
