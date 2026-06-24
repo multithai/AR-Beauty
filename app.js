@@ -287,32 +287,6 @@
         color = mix(color, target, u_whiten * 0.4 * mask);
       }
 
-      // ---- Simulate pimples ----
-      if (u_acne > 0.001 && u_hasFace > 0.5) {
-        float skin = skinFactor(v_uv);
-        vec2 lp = faceLocal(v_uv);
-        float spot = acneField(lp);
-        float amt = spot * u_acne * skin;
-        // inflamed reddish tint applied MULTIPLICATIVELY so it inherits the
-        // skin's own light & shadow -> looks on the skin, not a flat sticker.
-        vec3 tint = mix(vec3(1.0), vec3(0.80, 0.42, 0.38), amt);
-        color *= tint;
-        // tiny highlight near the centre to fake a slightly raised bump
-        float hi = smoothstep(0.78, 1.0, spot) * u_acne * skin;
-        color += hi * 0.10;
-      }
-
-      // ---- Simulate wrinkles ----
-      if (u_wrinkle > 0.001 && u_hasFace > 0.5) {
-        float skin = skinFactor(v_uv);
-        vec2 lp = faceLocal(v_uv);
-        float wr = wrinkleField(lp);
-        float wa = u_wrinkle * skin;
-        // darken the crease, then a faint highlight on the ridge for depth
-        color *= (1.0 - wr * 0.30 * wa);
-        color += smoothstep(0.30, 0.75, wr) * 0.035 * wa;
-      }
-
       // ---- Lip tint ----
       if (u_lips > 0.001 && u_hasFace > 0.5) {
         float dm = distance(v_uv, u_mouth) / max(u_mouthRad, 0.0001);
@@ -372,9 +346,167 @@
     "u_texSize", "u_smooth", "u_whiten", "u_bright", "u_slim", "u_eye", "u_lips",
     "u_hasFace", "u_faceCenter", "u_faceRadius", "u_eyeL", "u_eyeR", "u_eyeRad",
     "u_cheekL", "u_cheekR", "u_slimRad", "u_mouth", "u_mouthRad",
-    "u_acne", "u_wrinkle", "u_faceO", "u_faceEx", "u_faceEy", "u_faceHalfW", "u_faceHalfH",
   ].forEach((n) => { U[n] = gl.getUniformLocation(program, n); });
   gl.uniform1i(gl.getUniformLocation(program, "u_tex"), 0);
+
+  // ===============================================================
+  // Mesh overlay program — draws acne/wrinkles on the 468-point face
+  // mesh (canonical UVs) so they stick to the face & deform with it,
+  // like TikTok/IG filters.
+  // ===============================================================
+  const MESH_VERT = `
+    attribute vec2 a_pos;  // clip space (from landmarks)
+    attribute vec2 a_uv;   // canonical face uv (static)
+    varying vec2 v_uv;
+    void main() {
+      v_uv = a_uv;
+      gl_Position = vec4(a_pos, 0.0, 1.0);
+    }
+  `;
+  const MESH_FRAG = `
+    precision highp float;
+    varying vec2 v_uv;
+    uniform float u_acne;
+    uniform float u_wrinkle;
+
+    float hash21(vec2 p) {
+      p = fract(p * vec2(123.34, 456.21));
+      p += dot(p, p + 45.32);
+      return fract(p.x * p.y);
+    }
+    float ridge(float t) { return pow(max(sin(t), 0.0), 16.0); }
+
+    // interior skin weight in canonical uv (exclude eyes, mouth, boundary)
+    float featureMask(vec2 uv) {
+      float m = 1.0;
+      m *= smoothstep(0.03, 0.13, uv.x) * smoothstep(0.03, 0.13, 1.0 - uv.x);
+      m *= smoothstep(0.05, 0.13, uv.y) * smoothstep(0.03, 0.11, 1.0 - uv.y);
+      m *= smoothstep(0.055, 0.10, distance(uv, vec2(0.30, 0.378)));  // left eye
+      m *= smoothstep(0.055, 0.10, distance(uv, vec2(0.70, 0.378)));  // right eye
+      m *= smoothstep(0.075, 0.12, distance(uv, vec2(0.50, 0.70)));   // mouth
+      return clamp(m, 0.0, 1.0);
+    }
+
+    float acneField(vec2 uv) {
+      float density = mix(7.0, 15.0, u_acne);
+      vec2 g = uv * density;
+      vec2 cell = floor(g);
+      float spot = 0.0;
+      for (int dx = -1; dx <= 1; dx++) {
+        for (int dy = -1; dy <= 1; dy++) {
+          vec2 c = cell + vec2(float(dx), float(dy));
+          float h = hash21(c);
+          if (h < (0.16 + 0.5 * u_acne)) {
+            vec2 ctr = c + vec2(hash21(c + 1.7), hash21(c + 4.3));
+            float d = length(g - ctr);
+            float r = mix(0.10, 0.26, hash21(c + 7.1));
+            spot = max(spot, smoothstep(r, 0.0, d) * (0.6 + 0.4 * hash21(c + 9.9)));
+          }
+        }
+      }
+      return spot;
+    }
+
+    float wrinkleField(vec2 uv) {
+      float w = 0.0;
+      // forehead horizontal creases (v ~0.08..0.30)
+      float fz = smoothstep(0.07, 0.13, uv.y) * smoothstep(0.32, 0.24, uv.y)
+               * smoothstep(0.18, 0.32, uv.x) * smoothstep(0.82, 0.68, uv.x);
+      w += fz * ridge(uv.y * 110.0 + sin(uv.x * 18.0) * 0.7) * 0.9;
+      // nasolabial folds (nose wing -> mouth corner)
+      float nl = smoothstep(0.50, 0.55, uv.y) * smoothstep(0.78, 0.70, uv.y)
+               * smoothstep(0.30, 0.37, uv.x) * smoothstep(0.48, 0.40, uv.x);
+      w += nl * ridge((uv.x * 2.0 + uv.y) * 38.0) * 0.7;
+      float nr = smoothstep(0.50, 0.55, uv.y) * smoothstep(0.78, 0.70, uv.y)
+               * smoothstep(0.63, 0.56, uv.x) * smoothstep(0.70, 0.63, uv.x);
+      w += nr * ridge((-uv.x * 2.0 + uv.y) * 38.0) * 0.7;
+      // overall fine aging texture
+      w += ridge((uv.x * 28.0 + uv.y * 85.0) + hash21(floor(uv * 110.0)) * 6.28) * 0.16;
+      return clamp(w, 0.0, 1.0);
+    }
+
+    void main() {
+      float m = featureMask(v_uv);
+      if (m <= 0.001) discard;
+
+      float aA = u_acne > 0.001 ? acneField(v_uv) * u_acne * m * 0.85 : 0.0;
+      float aW = u_wrinkle > 0.001 ? wrinkleField(v_uv) * u_wrinkle * m * 0.7 : 0.0;
+      vec3 cA = vec3(0.60, 0.19, 0.16);  // inflamed red
+      vec3 cW = vec3(0.20, 0.13, 0.10);  // crease shadow
+
+      // composite acne over wrinkle, output premultiplied alpha
+      float outa = aA + aW * (1.0 - aA);
+      if (outa <= 0.003) discard;
+      vec3 prem = cA * aA + cW * aW * (1.0 - aA);
+      gl_FragColor = vec4(prem, outa);
+    }
+  `;
+
+  const meshProgram = gl.createProgram();
+  gl.attachShader(meshProgram, compileShader(gl.VERTEX_SHADER, MESH_VERT));
+  gl.attachShader(meshProgram, compileShader(gl.FRAGMENT_SHADER, MESH_FRAG));
+  gl.linkProgram(meshProgram);
+  if (!gl.getProgramParameter(meshProgram, gl.LINK_STATUS)) {
+    throw new Error(gl.getProgramInfoLog(meshProgram));
+  }
+  const meshLoc = {
+    aPos: gl.getAttribLocation(meshProgram, "a_pos"),
+    aUv: gl.getAttribLocation(meshProgram, "a_uv"),
+    uAcne: gl.getUniformLocation(meshProgram, "u_acne"),
+    uWrinkle: gl.getUniformLocation(meshProgram, "u_wrinkle"),
+  };
+  const haveMeshData = (typeof window.FACE_UVS !== "undefined" && typeof window.FACE_TRIS !== "undefined");
+  const uvBuf = gl.createBuffer();
+  const posBuf = gl.createBuffer();
+  const idxBuf = gl.createBuffer();
+  let meshPosArr = null;     // Float32Array clip positions (468*2)
+  let smLm = null;           // EMA-smoothed normalized landmarks
+  if (haveMeshData) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, uvBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, window.FACE_UVS, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, window.FACE_TRIS, gl.STATIC_DRAW);
+    meshPosArr = new Float32Array((window.FACE_UVS.length / 2) * 2);
+  }
+
+  // draw the simulated acne/wrinkle mesh over the current framebuffer
+  function drawMesh(lm, acne, wrinkle) {
+    if (!haveMeshData || !lm || (acne <= 0.001 && wrinkle <= 0.001)) return;
+    const n = meshPosArr.length / 2;
+    if (lm.length < n) return;
+
+    // EMA-smooth landmark positions, then convert to clip space
+    if (!smLm) { smLm = new Float32Array(n * 2); for (let i = 0; i < n; i++) { smLm[i*2]=lm[i].x; smLm[i*2+1]=lm[i].y; } }
+    for (let i = 0; i < n; i++) {
+      const sx = smLm[i*2]   + (lm[i].x - smLm[i*2])   * ALPHA;
+      const sy = smLm[i*2+1] + (lm[i].y - smLm[i*2+1]) * ALPHA;
+      smLm[i*2] = sx; smLm[i*2+1] = sy;
+      meshPosArr[i*2]   = sx * 2.0 - 1.0;
+      meshPosArr[i*2+1] = 1.0 - sy * 2.0;
+    }
+
+    gl.useProgram(meshProgram);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); // premultiplied alpha
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, meshPosArr, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(meshLoc.aPos);
+    gl.vertexAttribPointer(meshLoc.aPos, 2, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, uvBuf);
+    gl.enableVertexAttribArray(meshLoc.aUv);
+    gl.vertexAttribPointer(meshLoc.aUv, 2, gl.FLOAT, false, 0, 0);
+
+    gl.uniform1f(meshLoc.uAcne, acne);
+    gl.uniform1f(meshLoc.uWrinkle, wrinkle);
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
+    gl.drawElements(gl.TRIANGLES, window.FACE_TRIS.length, gl.UNSIGNED_SHORT, 0);
+
+    gl.disable(gl.BLEND);
+    gl.disableVertexAttribArray(meshLoc.aUv);
+  }
 
   // ---------------------------------------------------------------
   // Landmark helpers (MediaPipe FaceMesh indices)
@@ -443,11 +575,6 @@
     else for (const key in raw) sm[key] = ema(sm[key], raw[key]);
 
     gl.uniform1f(U.u_hasFace, 1.0);
-    gl.uniform2f(U.u_faceO, sm.cx, sm.cy);
-    gl.uniform2f(U.u_faceEx, sm.exX, sm.exY);
-    gl.uniform2f(U.u_faceEy, sm.eyX, sm.eyY);
-    gl.uniform1f(U.u_faceHalfW, sm.halfW);
-    gl.uniform1f(U.u_faceHalfH, sm.halfH);
     gl.uniform2f(U.u_faceCenter, sm.cx, sm.cy);
     gl.uniform2f(U.u_faceRadius, sm.rx, sm.ry);
     gl.uniform2f(U.u_eyeL, sm.eLx, sm.eLy);
@@ -476,6 +603,12 @@
       gl.viewport(0, 0, canvas.width, canvas.height);
     }
 
+    // --- base beauty pass ---
+    gl.useProgram(program);
+    gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
@@ -489,12 +622,13 @@
     gl.uniform1f(U.u_slim, (params.slim / 100) * k);
     gl.uniform1f(U.u_eye, (params.eye / 100) * k);
     gl.uniform1f(U.u_lips, (params.lips / 100) * k);
-    gl.uniform1f(U.u_acne, (params.acne / 100) * k);
-    gl.uniform1f(U.u_wrinkle, (params.wrinkle / 100) * k);
 
     computeFaceUniforms(compare ? null : latestLandmarks);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    // --- simulated acne/wrinkle overlay on the face mesh ---
+    drawMesh(compare ? null : latestLandmarks, (params.acne / 100) * k, (params.wrinkle / 100) * k);
 
     // FPS
     const now = performance.now();
