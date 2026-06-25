@@ -166,12 +166,13 @@
       return px / u_texSize;
     }
 
-    // Elliptical face mask (1 inside face, 0 outside) with soft edge.
+    // Elliptical face mask (1 inside face, 0 outside) with a WIDE soft edge
+    // so the beauty region fades out gradually (no visible bright oval/ring).
     float faceMask(vec2 uv) {
       if (u_hasFace < 0.5) return 0.0;
       vec2 d = (uv - u_faceCenter) / u_faceRadius;
       float r = length(d);
-      return 1.0 - smoothstep(0.85, 1.05, r);
+      return 1.0 - smoothstep(0.45, 1.05, r);
     }
 
     float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
@@ -278,13 +279,13 @@
 
       // ---- Brightening ----
       if (u_bright > 0.001) {
-        color += u_bright * 0.18 * mask;
+        color += u_bright * 0.11 * mask;
       }
 
-      // ---- Whitening (lift + slight desaturation toward warm white) ----
+      // ---- Whitening (gentle lift toward warm white, keeps skin texture) ----
       if (u_whiten > 0.001) {
-        vec3 target = mix(color, vec3(1.0, 0.98, 0.97), 0.5);
-        color = mix(color, target, u_whiten * 0.4 * mask);
+        vec3 target = mix(color, vec3(1.0, 0.98, 0.97), 0.32);
+        color = mix(color, target, u_whiten * 0.22 * mask);
       }
 
       // ---- Lip tint ----
