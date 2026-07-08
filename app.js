@@ -18,47 +18,39 @@
   // ---- DOM ----
   const video = document.getElementById("video");
   const canvas = document.getElementById("output");
-  const overlay = document.getElementById("overlay");
-  const startBtn = document.getElementById("startBtn");
-  const statusEl = document.getElementById("status");
-  const fpsEl = document.getElementById("fps");
+  const statusEl = document.getElementById("statusBadge") || { textContent: "" };
+  const fpsEl = { textContent: "" }; // fps hidden in booth UI
 
-  // ---- Controls ----
-  const controls = {
-    smooth: document.getElementById("smooth"),
-    whiten: document.getElementById("whiten"),
-    bright: document.getElementById("bright"),
-    slim: document.getElementById("slim"),
-    eye: document.getElementById("eye"),
-    lips: document.getElementById("lips"),
-    acne: document.getElementById("acne"),
-    wrinkle: document.getElementById("wrinkle"),
-  };
-  const valLabels = {
-    smooth: document.getElementById("v-smooth"),
-    whiten: document.getElementById("v-whiten"),
-    bright: document.getElementById("v-bright"),
-    slim: document.getElementById("v-slim"),
-    eye: document.getElementById("v-eye"),
-    lips: document.getElementById("v-lips"),
-    acne: document.getElementById("v-acne"),
-    wrinkle: document.getElementById("v-wrinkle"),
+  // All beauty/simulation strengths the engine reads (0..100).
+  const params = { smooth: 0, whiten: 0, bright: 0, slim: 0, eye: 0, lips: 0, acne: 0, wrinkle: 0, dull: 0 };
+
+  // Each skin mode is a preset of the params above.
+  const MODES = {
+    // ---- ผิวสุขภาพดี (healthy) ----
+    glow:    { smooth: 55, whiten: 42, bright: 24, slim: 12, eye: 8,  lips: 10 },
+    aura:    { smooth: 45, whiten: 30, bright: 34, slim: 8,  eye: 6,  lips: 12 },
+    radiant: { smooth: 62, whiten: 48, bright: 22, slim: 14, eye: 10, lips: 8  },
+    dewy:    { smooth: 66, whiten: 22, bright: 16, slim: 6,  eye: 6,  lips: 16 },
+    // ---- ผิวมีปัญหา (problem) ----
+    tone:     { acne: 32, dull: 22 },
+    dull:     { dull: 62 },
+    pigment:  { acne: 48 },
+    vascular: { acne: 34 },
+    tired:    { dull: 46, wrinkle: 26 },
+    damaged:  { dull: 52, wrinkle: 46 },
+    wrinkle:  { wrinkle: 72 },
   };
 
-  const params = { smooth: 45, whiten: 25, bright: 15, slim: 20, eye: 15, lips: 0, acne: 0, wrinkle: 0 };
-
-  const PRESETS = {
-    off:     { smooth: 0,  whiten: 0,  bright: 0,  slim: 0,  eye: 0,  lips: 0,  acne: 0,  wrinkle: 0 },
-    natural: { smooth: 45, whiten: 18, bright: 12, slim: 18, eye: 12, lips: 0,  acne: 0,  wrinkle: 0 },
-    smooth:  { smooth: 70, whiten: 30, bright: 18, slim: 25, eye: 18, lips: 10, acne: 0,  wrinkle: 0 },
-    glam:    { smooth: 85, whiten: 40, bright: 25, slim: 40, eye: 35, lips: 45, acne: 0,  wrinkle: 0 },
-    problem: { smooth: 0,  whiten: 0,  bright: 0,  slim: 0,  eye: 0,  lips: 0,  acne: 60, wrinkle: 55 },
-  };
-
-  let compare = false;   // show original (before) while held
+  let compare = false;
   let facingMode = "user";
   let faceMesh = null;
   let latestLandmarks = null;
+  let splitVal = 0;      // before/after wipe position (0 = full effect)
+
+  function applyMode(name) {
+    const p = MODES[name] || {};
+    for (const key in params) params[key] = p[key] || 0;
+  }
 
   // ---------------------------------------------------------------
   // WebGL setup
@@ -92,6 +84,8 @@
     uniform float u_slim;     // 0..1
     uniform float u_eye;      // 0..1
     uniform float u_lips;     // 0..1
+    uniform float u_dull;     // 0..1 make skin dull/tired (desaturate+darken)
+    uniform float u_split;    // 0..1 before/after wipe: x < split shows original
 
     uniform float u_hasFace;
     uniform vec2  u_faceCenter; // uv
@@ -244,6 +238,11 @@
     }
 
     void main() {
+      // before/after wipe: left of the split shows the untouched camera
+      if (u_split > 0.001 && v_uv.x < u_split) {
+        gl_FragColor = vec4(texture2D(u_tex, v_uv).rgb, 1.0);
+        return;
+      }
       vec2 uv = warp(v_uv);
       vec3 orig = texture2D(u_tex, uv).rgb;
       vec3 color = orig;
@@ -299,6 +298,13 @@
         color = mix(color, mix(color, lipColor, 0.6), u_lips * lm);
       }
 
+      // ---- Dull / tired skin (desaturate + darken) ----
+      if (u_dull > 0.001 && mask > 0.001) {
+        float g = luma(color);
+        vec3 dullc = mix(color, vec3(g), 0.6) * 0.86; // grayer & darker
+        color = mix(color, dullc, u_dull * mask);
+      }
+
       gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
     }
   `;
@@ -345,6 +351,7 @@
   const U = {};
   [
     "u_texSize", "u_smooth", "u_whiten", "u_bright", "u_slim", "u_eye", "u_lips",
+    "u_dull", "u_split",
     "u_hasFace", "u_faceCenter", "u_faceRadius", "u_eyeL", "u_eyeR", "u_eyeRad",
     "u_cheekL", "u_cheekR", "u_slimRad", "u_mouth", "u_mouthRad",
   ].forEach((n) => { U[n] = gl.getUniformLocation(program, n); });
@@ -359,16 +366,20 @@
     attribute vec2 a_pos;  // clip space (from landmarks)
     attribute vec2 a_uv;   // canonical face uv (static)
     varying vec2 v_uv;
+    varying float v_sx;    // screen x (0..1) for the before/after wipe
     void main() {
       v_uv = a_uv;
+      v_sx = a_pos.x * 0.5 + 0.5;
       gl_Position = vec4(a_pos, 0.0, 1.0);
     }
   `;
   const MESH_FRAG = `
     precision highp float;
     varying vec2 v_uv;
+    varying float v_sx;
     uniform float u_acne;
     uniform float u_wrinkle;
+    uniform float u_split;
 
     float hash21(vec2 p) {
       p = fract(p * vec2(123.34, 456.21));
@@ -427,6 +438,8 @@
     }
 
     void main() {
+      // before/after wipe: no simulation on the original (left) side
+      if (u_split > 0.001 && v_sx < u_split) { gl_FragColor = vec4(1.0); return; }
       float m = featureMask(v_uv);
       if (m <= 0.001) { gl_FragColor = vec4(1.0); return; }  // multiply identity
 
@@ -453,6 +466,7 @@
     aUv: gl.getAttribLocation(meshProgram, "a_uv"),
     uAcne: gl.getUniformLocation(meshProgram, "u_acne"),
     uWrinkle: gl.getUniformLocation(meshProgram, "u_wrinkle"),
+    uSplit: gl.getUniformLocation(meshProgram, "u_split"),
   };
   const haveMeshData = (typeof window.FACE_UVS !== "undefined" && typeof window.FACE_TRIS !== "undefined");
   const uvBuf = gl.createBuffer();
@@ -505,6 +519,7 @@
 
     gl.uniform1f(meshLoc.uAcne, acne);
     gl.uniform1f(meshLoc.uWrinkle, wrinkle);
+    gl.uniform1f(meshLoc.uSplit, splitVal);
 
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
     gl.drawElements(gl.TRIANGLES, window.FACE_TRIS.length, gl.UNSIGNED_SHORT, 0);
@@ -627,13 +642,15 @@
     gl.uniform1f(U.u_slim, (params.slim / 100) * k);
     gl.uniform1f(U.u_eye, (params.eye / 100) * k);
     gl.uniform1f(U.u_lips, (params.lips / 100) * k);
+    gl.uniform1f(U.u_dull, (params.dull / 100) * k);
+    gl.uniform1f(U.u_split, splitVal);
 
-    computeFaceUniforms(compare ? null : latestLandmarks);
+    computeFaceUniforms(latestLandmarks);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
     // --- simulated acne/wrinkle overlay on the face mesh ---
-    drawMesh(compare ? null : latestLandmarks, (params.acne / 100) * k, (params.wrinkle / 100) * k);
+    drawMesh(latestLandmarks, (params.acne / 100) * k, (params.wrinkle / 100) * k);
 
     // FPS
     const now = performance.now();
@@ -697,7 +714,6 @@
       video.srcObject = currentStream;
       await video.play();
 
-      overlay.classList.add("hidden");
       // back camera should not be mirrored
       canvas.classList.toggle("no-mirror", facingMode === "environment");
 
@@ -719,80 +735,126 @@
     } catch (err) {
       console.error(err);
       statusEl.textContent = "เปิดกล้องไม่สำเร็จ: " + err.message;
-      overlay.classList.remove("hidden");
     }
   }
 
-  // ---------------------------------------------------------------
-  // UI wiring
-  // ---------------------------------------------------------------
-  Object.keys(controls).forEach((key) => {
-    controls[key].addEventListener("input", (e) => {
-      params[key] = +e.target.value;
-      valLabels[key].textContent = e.target.value;
-      clearActivePreset();
-    });
-  });
-
-  function applyPreset(name) {
-    const p = PRESETS[name];
-    if (!p) return;
-    Object.keys(p).forEach((key) => {
-      params[key] = p[key];
-      controls[key].value = p[key];
-      valLabels[key].textContent = p[key];
-    });
-  }
-  function clearActivePreset() {
-    document.querySelectorAll(".preset").forEach((b) => b.classList.remove("active"));
-  }
-  document.querySelectorAll(".preset").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      clearActivePreset();
-      btn.classList.add("active");
-      applyPreset(btn.dataset.preset);
-    });
-  });
-
-  // Compare (press & hold)
-  const compareBtn = document.getElementById("compareBtn");
-  const setCompare = (v) => { compare = v; };
-  compareBtn.addEventListener("mousedown", () => setCompare(true));
-  compareBtn.addEventListener("mouseup", () => setCompare(false));
-  compareBtn.addEventListener("mouseleave", () => setCompare(false));
-  compareBtn.addEventListener("touchstart", (e) => { e.preventDefault(); setCompare(true); }, { passive: false });
-  compareBtn.addEventListener("touchend", (e) => { e.preventDefault(); setCompare(false); });
-
-  // Snapshot
-  document.getElementById("snapBtn").addEventListener("click", () => {
-    // re-render to be sure the framebuffer is current
+  function captureImage() {
     render();
     const out = document.createElement("canvas");
     out.width = canvas.width;
     out.height = canvas.height;
     const ctx = out.getContext("2d");
-    if (facingMode === "user") {
-      ctx.translate(out.width, 0);
-      ctx.scale(-1, 1); // mirror to match preview
-    }
+    if (facingMode === "user") { ctx.translate(out.width, 0); ctx.scale(-1, 1); }
     ctx.drawImage(canvas, 0, 0);
-    const link = document.createElement("a");
-    link.download = "ar-beauty-" + Date.now() + ".png";
-    link.href = out.toDataURL("image/png");
-    link.click();
+    return out.toDataURL("image/png");
+  }
+
+  // ---------------------------------------------------------------
+  // Screen navigation (booth flow)
+  // ---------------------------------------------------------------
+  const screens = {
+    home: document.getElementById("screen-home"),
+    camera: document.getElementById("screen-camera"),
+    result: document.getElementById("screen-result"),
+  };
+  function showScreen(name) {
+    for (const k in screens) {
+      if (screens[k]) screens[k].classList.toggle("active", k === name);
+    }
+  }
+
+  // ---- Home screen ----
+  const emailInput = document.getElementById("emailInput");
+  const startBtn = document.getElementById("startBtn");
+  if (startBtn) {
+    startBtn.addEventListener("click", () => {
+      const email = (emailInput && emailInput.value || "").trim();
+      if (emailInput && email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        emailInput.classList.add("invalid");
+        emailInput.focus();
+        return;
+      }
+      if (emailInput) emailInput.classList.remove("invalid");
+      try { window.localStorage.setItem("pan_email", email); } catch (e) {}
+      showScreen("camera");
+      startCamera();
+    });
+  }
+
+  // ---- Mode selection ----
+  document.querySelectorAll(".mode").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".mode").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      applyMode(btn.dataset.mode);
+    });
   });
 
-  // Switch camera
-  document.getElementById("switchBtn").addEventListener("click", () => {
-    facingMode = facingMode === "user" ? "environment" : "user";
-    startCamera();
-  });
+  // ---- Before/after wipe slider ----
+  const splitSlider = document.getElementById("split");
+  if (splitSlider) {
+    splitSlider.addEventListener("input", (e) => { splitVal = +e.target.value / 100; });
+  }
 
-  startBtn.addEventListener("click", startCamera);
+  // ---- Switch camera ----
+  const switchBtn = document.getElementById("switchBtn");
+  if (switchBtn) {
+    switchBtn.addEventListener("click", () => {
+      facingMode = facingMode === "user" ? "environment" : "user";
+      startCamera();
+    });
+  }
+
+  // ---- Capture -> result ----
+  let lastShot = null;
+  const resultImg = document.getElementById("resultImg");
+  const captureBtn = document.getElementById("captureBtn");
+  if (captureBtn) {
+    captureBtn.addEventListener("click", () => {
+      splitVal = 0; // capture the full effect, no wipe
+      if (splitSlider) splitSlider.value = 0;
+      lastShot = captureImage();
+      if (resultImg) resultImg.src = lastShot;
+      showScreen("result");
+    });
+  }
+
+  // ---- Result buttons ----
+  const backBtn = document.getElementById("backBtn");
+  if (backBtn) backBtn.addEventListener("click", () => showScreen("camera"));
+
+  const downloadBtn = document.getElementById("downloadBtn");
+  if (downloadBtn) {
+    downloadBtn.addEventListener("click", () => {
+      if (!lastShot) return;
+      const a = document.createElement("a");
+      a.download = "decode-your-skin-" + Date.now() + ".png";
+      a.href = lastShot;
+      a.click();
+    });
+  }
+
+  const shareBtn = document.getElementById("shareBtn");
+  if (shareBtn) {
+    shareBtn.addEventListener("click", async () => {
+      if (!lastShot) return;
+      try {
+        const blob = await (await fetch(lastShot)).blob();
+        const file = new File([blob], "decode-your-skin.png", { type: "image/png" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: "DECODE YOUR SKIN", text: "AI Photo Booth by PAN Clinic" });
+        } else {
+          // fallback: download
+          const a = document.createElement("a");
+          a.download = "decode-your-skin.png";
+          a.href = lastShot;
+          a.click();
+        }
+      } catch (e) { /* user cancelled */ }
+    });
+  }
 
   if (typeof FaceMesh === "undefined") {
     statusEl.textContent = "โหลดไลบรารีไม่สำเร็จ (ตรวจสอบอินเทอร์เน็ต)";
-  } else {
-    statusEl.textContent = "พร้อมเปิดกล้อง";
   }
 })();

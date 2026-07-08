@@ -3,82 +3,113 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>AR Beauty Filter — หน้าเนียนไร้สิว ปรับแต่งหน้าได้</title>
+  <title>DECODE YOUR SKIN · AI Photo Booth</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="app">
-    <header class="topbar">
-      <h1>✨ AR Beauty Filter</h1>
-      <div class="badges">
-        <span id="fps" class="badge">-- FPS</span>
-        <span id="status" class="badge">กำลังโหลด…</span>
-      </div>
+  <div class="frame">
+    <!-- Top logos -->
+    <header class="logos">
+      <span class="logo">PAN CLINIC</span>
+      <span class="logo-sep">·</span>
+      <span class="logo logo-pan">PAN</span>
+      <span class="logo-sep">·</span>
+      <span class="logo">RAJDHEVEE CLINIC</span>
     </header>
 
-    <main class="stage">
-      <div class="canvas-wrap">
-        <video id="video" playsinline muted></video>
-        <canvas id="output"></canvas>
-        <div id="overlay" class="overlay">
-          <div class="overlay-card">
-            <p>กดปุ่ม <b>เปิดกล้อง</b> เพื่อเริ่มใช้งาน</p>
-            <button id="startBtn" class="primary">📷 เปิดกล้อง</button>
-            <small>ระบบจะขออนุญาตใช้กล้อง — ภาพประมวลผลในเครื่องคุณเท่านั้น ไม่ส่งออกไปไหน</small>
-          </div>
-        </div>
-      </div>
-    </main>
-
-    <section class="controls">
-      <div class="presets">
-        <button class="preset" data-preset="off">ปิด</button>
-        <button class="preset active" data-preset="natural">เนียนธรรมชาติ</button>
-        <button class="preset" data-preset="smooth">ผิวเนียนมาก</button>
-        <button class="preset" data-preset="glam">สวยจัดเต็ม</button>
-        <button class="preset sim" data-preset="problem">ผิวมีปัญหา</button>
+    <!-- ============ SCREEN 1 : HOME ============ -->
+    <section id="screen-home" class="screen active">
+      <div class="title-block">
+        <h1 class="t-en">DECODE YOUR SKIN</h1>
+        <h2 class="t-en2">DISCOVER YOUR BEAUTY DESTINATION</h2>
+        <p class="t-th">วิทยาศาสตร์แห่งความงามที่แท้จริง</p>
       </div>
 
-      <div class="sliders">
-        <label>หน้าเนียน / ลบสิว <span class="val" id="v-smooth">45</span>
-          <input type="range" id="smooth" min="0" max="100" value="45" />
-        </label>
-        <label>ผิวกระจ่างใส <span class="val" id="v-whiten">25</span>
-          <input type="range" id="whiten" min="0" max="100" value="25" />
-        </label>
-        <label>ความสว่าง <span class="val" id="v-bright">15</span>
-          <input type="range" id="bright" min="0" max="100" value="15" />
-        </label>
-        <label>หน้าเรียว <span class="val" id="v-slim">20</span>
-          <input type="range" id="slim" min="0" max="100" value="20" />
-        </label>
-        <label>ตาโต <span class="val" id="v-eye">15</span>
-          <input type="range" id="eye" min="0" max="100" value="15" />
-        </label>
-        <label>โทนสีปาก <span class="val" id="v-lips">0</span>
-          <input type="range" id="lips" min="0" max="100" value="0" />
-        </label>
-        <label class="sim">จำลองสิว 🔴 <span class="val" id="v-acne">0</span>
-          <input type="range" id="acne" min="0" max="100" value="0" />
-        </label>
-        <label class="sim">จำลองริ้วรอย 〰️ <span class="val" id="v-wrinkle">0</span>
-          <input type="range" id="wrinkle" min="0" max="100" value="0" />
-        </label>
+      <h2 class="hero">AI PHOTO BOOTH</h2>
+
+      <input id="emailInput" class="email" type="email" inputmode="email"
+             placeholder="กรอก Email Address" autocomplete="email" />
+
+      <div class="mascots-home">
+        <img class="mascot" src="assets/m_mooncake.png" alt="" onerror="this.style.display='none'" />
+        <img class="mascot" src="assets/m_octopus.png" alt="" />
+        <img class="mascot" src="assets/m_icecream.png" alt="" />
+        <img class="mascot" src="assets/m_shield.png" alt="" />
       </div>
 
-      <div class="actions">
-        <button id="compareBtn" class="ghost">👁️ เทียบก่อน/หลัง</button>
-        <button id="snapBtn" class="primary">📸 ถ่ายรูป</button>
-        <button id="switchBtn" class="ghost">🔄 สลับกล้อง</button>
-      </div>
+      <button id="startBtn" class="cta">
+        <span class="cta-ico">📷</span>
+        <span class="cta-text"><b>เริ่มถ่ายภาพ</b><small>เพื่อวิเคราะห์ของคุณ</small></span>
+      </button>
     </section>
 
-    <footer class="foot">
-      <small>สร้างด้วย MediaPipe FaceMesh + WebGL · ประมวลผลแบบเรียลไทม์ในเบราว์เซอร์</small>
-    </footer>
+    <!-- ============ SCREEN 2 : CAMERA + MODES ============ -->
+    <section id="screen-camera" class="screen">
+      <div class="head-th">
+        <h2>เลือกโหมดผิวที่คุณอยากรู้จัก</h2>
+        <p>AI จะวิเคราะห์และแสดงผิวของคุณทันที</p>
+      </div>
+
+      <div class="cam-card">
+        <video id="video" playsinline muted></video>
+        <canvas id="output"></canvas>
+        <span id="statusBadge" class="cam-status">กำลังโหลด…</span>
+        <button id="switchBtn" class="cam-switch" title="สลับกล้อง">🔄</button>
+        <div class="wipe">
+          <span class="wipe-label">ก่อน</span>
+          <input id="split" type="range" min="0" max="100" value="0" />
+          <span class="wipe-label">หลัง</span>
+        </div>
+      </div>
+
+      <h3 class="grp grp-good">ผิวสุขภาพดี</h3>
+      <div class="good-grid">
+        <button class="mode good" data-mode="glow"><span class="ic">✨</span>ผิวกระจ่างใส<br>ดูโกลว์ออร่า</button>
+        <button class="mode good" data-mode="aura"><span class="ic">🌟</span>ผิวออร่า<br>เปล่งประกาย</button>
+        <button class="mode good" data-mode="radiant"><span class="ic">💫</span>ผิวกระจ่างใส<br>ดูโกลว์ออร่า</button>
+        <button class="mode good" data-mode="dewy"><span class="ic">💧</span>ผิวชุ่มชื่น<br>มีน้ำมีนวล</button>
+      </div>
+
+      <h3 class="grp grp-bad">ผิวมีปัญหา</h3>
+      <div class="bad-wrap">
+        <button class="mode bad" data-mode="tone">ผิวมีสี</button>
+        <button class="mode bad" data-mode="dull">ผิวหมอง</button>
+        <button class="mode bad" data-mode="pigment">ผิวมีฝ้าเม็ดสี</button>
+        <button class="mode bad" data-mode="vascular">ผิวมีฝ้าเส้นเลือด</button>
+        <button class="mode bad" data-mode="tired">ผิวอ่อนล้า</button>
+        <button class="mode bad" data-mode="damaged">ผิวโทรม</button>
+        <button class="mode bad" data-mode="wrinkle">ผิวมีริ้วรอย</button>
+      </div>
+
+      <button id="captureBtn" class="cta">
+        <span class="cta-ico">📷</span>
+        <span class="cta-text"><b>ถ่ายภาพ</b><small>เพื่อวิเคราะห์ของคุณ</small></span>
+      </button>
+    </section>
+
+    <!-- ============ SCREEN 3 : RESULT ============ -->
+    <section id="screen-result" class="screen">
+      <div class="title-block">
+        <h1 class="t-en">DECODE YOUR SKIN</h1>
+        <h2 class="t-en2">DISCOVER YOUR BEAUTY DESTINATION</h2>
+        <p class="t-th">วิทยาศาสตร์แห่งความงามที่แท้จริง</p>
+      </div>
+
+      <div class="result-card">
+        <img id="resultImg" alt="ผลลัพธ์" />
+      </div>
+
+      <div class="result-actions">
+        <button id="backBtn" class="rbtn rbtn-back">BACK</button>
+        <button id="shareBtn" class="rbtn rbtn-share">SHARE</button>
+        <button id="downloadBtn" class="rbtn rbtn-dl">DOWNLOAD</button>
+      </div>
+    </section>
   </div>
 
-  <!-- MediaPipe FaceMesh (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
   <script src="facemesh_data.js"></script>
   <script src="app.js"></script>
