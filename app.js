@@ -45,7 +45,7 @@
   let facingMode = "user";
   let faceMesh = null;
   let latestLandmarks = null;
-  let splitVal = 0;      // before/after wipe position (0 = full effect)
+  let fxVal = 1;         // effect intensity: 0 = ก่อน (original), 1 = หลัง (full)
 
   function applyMode(name) {
     const p = MODES[name] || {};
@@ -519,7 +519,7 @@
 
     gl.uniform1f(meshLoc.uAcne, acne);
     gl.uniform1f(meshLoc.uWrinkle, wrinkle);
-    gl.uniform1f(meshLoc.uSplit, splitVal);
+    gl.uniform1f(meshLoc.uSplit, 0.0);
 
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
     gl.drawElements(gl.TRIANGLES, window.FACE_TRIS.length, gl.UNSIGNED_SHORT, 0);
@@ -635,7 +635,8 @@
 
     gl.uniform2f(U.u_texSize, canvas.width, canvas.height);
 
-    const k = compare ? 0 : 1; // hold compare -> show original
+    // fx = before/after intensity (0 = original, 1 = full effect)
+    const k = fxVal;
     gl.uniform1f(U.u_smooth, (params.smooth / 100) * k);
     gl.uniform1f(U.u_whiten, (params.whiten / 100) * k);
     gl.uniform1f(U.u_bright, (params.bright / 100) * k);
@@ -643,7 +644,7 @@
     gl.uniform1f(U.u_eye, (params.eye / 100) * k);
     gl.uniform1f(U.u_lips, (params.lips / 100) * k);
     gl.uniform1f(U.u_dull, (params.dull / 100) * k);
-    gl.uniform1f(U.u_split, splitVal);
+    gl.uniform1f(U.u_split, 0.0); // spatial wipe disabled; using intensity instead
 
     computeFaceUniforms(latestLandmarks);
 
@@ -790,10 +791,11 @@
     });
   });
 
-  // ---- Before/after wipe slider ----
+  // ---- Before/after intensity slider (0 = original, 100 = full effect) ----
   const splitSlider = document.getElementById("split");
   if (splitSlider) {
-    splitSlider.addEventListener("input", (e) => { splitVal = +e.target.value / 100; });
+    fxVal = +splitSlider.value / 100;
+    splitSlider.addEventListener("input", (e) => { fxVal = +e.target.value / 100; });
   }
 
   // ---- Switch camera ----
@@ -811,9 +813,7 @@
   const captureBtn = document.getElementById("captureBtn");
   if (captureBtn) {
     captureBtn.addEventListener("click", () => {
-      splitVal = 0; // capture the full effect, no wipe
-      if (splitSlider) splitSlider.value = 0;
-      lastShot = captureImage();
+      lastShot = captureImage(); // capture exactly what's shown (current intensity)
       if (resultImg) resultImg.src = lastShot;
       showScreen("result");
     });
