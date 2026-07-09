@@ -828,6 +828,54 @@
     });
   }
 
+  // ---- AI generative retouch ----
+  const aiBtn = document.getElementById("aiBtn");
+  const aiLoading = document.getElementById("aiLoading");
+  if (aiBtn) {
+    aiBtn.addEventListener("click", async () => {
+      if (!lastShot) return;
+      const endpoint = (window.AI_ENDPOINT || "").trim();
+      if (!endpoint) {
+        alert("ยังไม่ได้ตั้งค่า backend สำหรับ AI\nดูวิธีตั้งค่าในไฟล์ AI_SETUP.md");
+        return;
+      }
+      aiBtn.disabled = true;
+      if (aiLoading) aiLoading.classList.add("show");
+      try {
+        const resp = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: lastShot }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.image) throw new Error(data.error || "AI ประมวลผลไม่สำเร็จ");
+        // load the AI result; keep it for download/share
+        await new Promise((res, rej) => {
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.onload = () => {
+            if (resultImg) resultImg.src = data.image;
+            // convert to data URL for download/share (best effort)
+            try {
+              const c = document.createElement("canvas");
+              c.width = img.naturalWidth; c.height = img.naturalHeight;
+              c.getContext("2d").drawImage(img, 0, 0);
+              lastShot = c.toDataURL("image/png");
+            } catch (e) { lastShot = data.image; }
+            res();
+          };
+          img.onerror = rej;
+          img.src = data.image;
+        });
+      } catch (e) {
+        alert("AI ประมวลผลไม่สำเร็จ: " + e.message);
+      } finally {
+        aiBtn.disabled = false;
+        if (aiLoading) aiLoading.classList.remove("show");
+      }
+    });
+  }
+
   // ---- Result buttons ----
   const backBtn = document.getElementById("backBtn");
   if (backBtn) backBtn.addEventListener("click", () => showScreen("camera"));

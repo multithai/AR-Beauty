@@ -234,7 +234,32 @@ input[type="range"]::-moz-range-thumb {
   border-radius: 22px; overflow: hidden; background: #fff;
   box-shadow: 0 10px 26px rgba(0,0,0,.18);
 }
+.result-card { position: relative; }
 .result-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* AI loading overlay */
+.ai-loading {
+  position: absolute; inset: 0; display: none;
+  flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  background: rgba(20,18,30,.62); backdrop-filter: blur(3px); color: #fff; text-align: center;
+}
+.ai-loading.show { display: flex; }
+.ai-loading p { margin: 0; font-weight: 700; font-size: 16px; }
+.ai-loading small { opacity: .85; }
+.spinner {
+  width: 46px; height: 46px; border-radius: 50%;
+  border: 4px solid rgba(255,255,255,.3); border-top-color: #ffd36e;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* AI button (gradient, sits above result actions) */
+.cta-ai {
+  margin: 0 0 12px;
+  background: linear-gradient(90deg, #7c4dff, #e83e8c, #ff8a3d);
+  box-shadow: 0 8px 20px rgba(180,60,140,.4);
+}
+.cta-ai:disabled { opacity: .6; }
 .result-actions { display: flex; flex-direction: column; gap: 12px; margin-top: auto; }
 .rbtn {
   border: none; border-radius: 999px; padding: 15px;

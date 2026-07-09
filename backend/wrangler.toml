@@ -1,0 +1,11 @@
+name = "pan-ai"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+# ตัวแปร (ไม่ลับ) ตั้งตรงนี้ได้ หรือใน dashboard
+[vars]
+# REPLICATE_MODEL = "black-forest-labs/flux-kontext-pro"
+# ALLOW_ORIGIN = "https://multithai.github.io"
+
+# ค่า secret (REPLICATE_API_TOKEN) อย่าใส่ในไฟล์นี้ ให้ตั้งด้วย:
+#   npx wrangler secret put REPLICATE_API_TOKEN
