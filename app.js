@@ -22,15 +22,15 @@
   const fpsEl = { textContent: "" }; // fps hidden in booth UI
 
   // All beauty/simulation strengths the engine reads (0..100).
-  const params = { smooth: 0, whiten: 0, bright: 0, slim: 0, eye: 0, lips: 0, acne: 0, wrinkle: 0, dull: 0 };
+  const params = { smooth: 0, whiten: 0, bright: 0, slim: 0, eye: 0, lips: 0, acne: 0, wrinkle: 0, dull: 0, glow: 0 };
 
   // Each skin mode is a preset of the params above.
   const MODES = {
-    // ---- ผิวสุขภาพดี (healthy) ----
-    glow:    { smooth: 55, whiten: 42, bright: 24, slim: 12, eye: 8,  lips: 10 },
-    aura:    { smooth: 45, whiten: 30, bright: 34, slim: 8,  eye: 6,  lips: 12 },
-    radiant: { smooth: 62, whiten: 48, bright: 22, slim: 14, eye: 10, lips: 8  },
-    dewy:    { smooth: 66, whiten: 22, bright: 16, slim: 6,  eye: 6,  lips: 16 },
+    // ---- ผิวสุขภาพดี (healthy) — strong, "wow" beauty ----
+    glow:    { smooth: 86, whiten: 55, bright: 30, slim: 24, eye: 22, lips: 24, glow: 55 },
+    aura:    { smooth: 78, whiten: 46, bright: 40, slim: 20, eye: 18, lips: 28, glow: 78 },
+    radiant: { smooth: 90, whiten: 62, bright: 32, slim: 28, eye: 26, lips: 22, glow: 66 },
+    dewy:    { smooth: 92, whiten: 36, bright: 24, slim: 18, eye: 18, lips: 32, glow: 48 },
     // ---- ผิวมีปัญหา (problem) ----
     tone:     { acne: 32, dull: 22 },
     dull:     { dull: 62 },
@@ -85,6 +85,7 @@
     uniform float u_eye;      // 0..1
     uniform float u_lips;     // 0..1
     uniform float u_dull;     // 0..1 make skin dull/tired (desaturate+darken)
+    uniform float u_glow;     // 0..1 radiant glow / aura bloom on skin
     uniform float u_split;    // 0..1 before/after wipe: x < split shows original
 
     uniform float u_hasFace;
@@ -127,14 +128,14 @@
         if (dl < rad) {
           float infl = (1.0 - dl / rad);
           infl = infl * infl;
-          px.x -= u_slim * infl * rad * 0.18;
+          px.x -= u_slim * infl * rad * 0.26;
         }
         vec2 cr = u_cheekR * u_texSize;
         float dr = distance(px, cr);
         if (dr < rad) {
           float infl = (1.0 - dr / rad);
           infl = infl * infl;
-          px.x += u_slim * infl * rad * 0.18;
+          px.x += u_slim * infl * rad * 0.26;
         }
       }
 
@@ -145,14 +146,14 @@
         float de = distance(px, el);
         if (de < rad) {
           float t = de / rad;
-          float scale = 1.0 - u_eye * 0.35 * (1.0 - t);
+          float scale = 1.0 - u_eye * 0.5 * (1.0 - t);
           px = el + (px - el) * scale;
         }
         vec2 er = u_eyeR * u_texSize;
         float de2 = distance(px, er);
         if (de2 < rad) {
           float t = de2 / rad;
-          float scale = 1.0 - u_eye * 0.35 * (1.0 - t);
+          float scale = 1.0 - u_eye * 0.5 * (1.0 - t);
           px = er + (px - er) * scale;
         }
       }
@@ -252,7 +253,7 @@
       // ---- Skin smoothing (edge-preserving bilateral) ----
       if (u_smooth > 0.001 && mask > 0.001) {
         vec2 texel = 1.0 / u_texSize;
-        float radius = mix(1.0, 4.0, u_smooth);
+        float radius = mix(1.5, 6.5, u_smooth);
         // sigma for color similarity -> preserves edges (eyes, lips, brows)
         float sigmaC = 0.09 + 0.06 * u_smooth;
         float invC = 1.0 / (2.0 * sigmaC * sigmaC);
@@ -281,10 +282,17 @@
         color += u_bright * 0.11 * mask;
       }
 
-      // ---- Whitening (gentle lift toward warm white, keeps skin texture) ----
+      // ---- Whitening (lift toward warm white) ----
       if (u_whiten > 0.001) {
-        vec3 target = mix(color, vec3(1.0, 0.98, 0.97), 0.32);
-        color = mix(color, target, u_whiten * 0.22 * mask);
+        vec3 target = mix(color, vec3(1.0, 0.98, 0.97), 0.42);
+        color = mix(color, target, u_whiten * 0.34 * mask);
+      }
+
+      // ---- Radiant glow / aura (soft bloom on skin highlights) ----
+      if (u_glow > 0.001 && mask > 0.001) {
+        float hi = smoothstep(0.5, 0.92, luma(color));
+        color += hi * u_glow * 0.40 * mask;              // glossy highlight bloom
+        color = mix(color, color * 1.06 + 0.015, u_glow * 0.25 * mask); // overall radiance
       }
 
       // ---- Lip tint ----
@@ -351,7 +359,7 @@
   const U = {};
   [
     "u_texSize", "u_smooth", "u_whiten", "u_bright", "u_slim", "u_eye", "u_lips",
-    "u_dull", "u_split",
+    "u_dull", "u_glow", "u_split",
     "u_hasFace", "u_faceCenter", "u_faceRadius", "u_eyeL", "u_eyeR", "u_eyeRad",
     "u_cheekL", "u_cheekR", "u_slimRad", "u_mouth", "u_mouthRad",
   ].forEach((n) => { U[n] = gl.getUniformLocation(program, n); });
@@ -644,6 +652,7 @@
     gl.uniform1f(U.u_eye, (params.eye / 100) * k);
     gl.uniform1f(U.u_lips, (params.lips / 100) * k);
     gl.uniform1f(U.u_dull, (params.dull / 100) * k);
+    gl.uniform1f(U.u_glow, (params.glow / 100) * k);
     gl.uniform1f(U.u_split, 0.0); // spatial wipe disabled; using intensity instead
 
     computeFaceUniforms(latestLandmarks);
